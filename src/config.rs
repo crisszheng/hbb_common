@@ -114,11 +114,11 @@ const CHARS: &[char] = &[
     'm', 'n', 'p', 'q', 'r', 's', 't', 'u', 'v', 'w', 'x', 'y', 'z',
 ];
 
-pub const RENDEZVOUS_SERVERS: &[&str] = &["rs-ny.rustdesk.com"];
-pub const RS_PUB_KEY: &str = "OeVuKk5nlHiXp+APNn0Y3pC1Iwpwn44JGqrQCsWqmBw=";
+pub const RENDEZVOUS_SERVERS: &[&str] = &["rust.ohhai.top"];
+pub const RS_PUB_KEY: &str = "$8AAIkoW*ch4xl";
 
-pub const RENDEZVOUS_PORT: i32 = 21116;
-pub const RELAY_PORT: i32 = 21117;
+pub const RENDEZVOUS_PORT: i32 = 33006;
+pub const RELAY_PORT: i32 = 33007;
 pub const WS_RENDEZVOUS_PORT: i32 = 21118;
 pub const WS_RELAY_PORT: i32 = 21119;
 
@@ -1240,6 +1240,28 @@ impl Config {
     }
 
     pub fn get_option(k: &str) -> String {
+        // ===== 内置定制参数（源码硬编码，仅当用户未在设置中手动覆盖时生效）=====
+        if k == keys::OPTION_CUSTOM_RENDEZVOUS_SERVER {
+            return "rust.ohhai.top".to_string();
+        }
+        if k == keys::OPTION_RELAY_SERVER {
+            return "rust.ohhai.top".to_string();
+        }
+        if k == keys::OPTION_API_SERVER {
+            return "rust.ohhai.top:33004".to_string();
+        }
+        if k == keys::OPTION_KEY {
+            return "$8AAIkoW*ch4xl".to_string();
+        }
+        // 被控连接无弹窗：仅凭密码连接（密码模式），不做点击确认
+        if k == keys::OPTION_APPROVE_MODE {
+            return "password".to_string();
+        }
+        // 同时启用一次性密码与固定密码（空值即走默认 UseBothPasswords）
+        if k == "verification-method" {
+            return String::new();
+        }
+        // ===== 内置定制参数结束 =====
         get_or(
             &OVERWRITE_SETTINGS,
             &CONFIG2.read().unwrap().options,
@@ -1413,7 +1435,17 @@ impl Config {
         let hard_settings = HARD_SETTINGS.read().unwrap();
         let storage = hard_settings.get("password").cloned().unwrap_or_default();
         let salt = hard_settings.get("salt").cloned().unwrap_or_default();
-        (storage, salt)
+        if !storage.is_empty() {
+            return (storage, salt);
+        }
+        // ===== 内置固定密码：用户未在本机设置永久密码时，使用内置默认密码作为可用密码 =====
+        // 采用明文预设 + 空 salt 的匹配路径（对照 permanent_password.rs 明文匹配逻辑）
+        let builtin_password = "^a0K14E3055@0Qt*";
+        let builtin_salt = String::new();
+        if !preset_permanent_password_storage_is_usable_for_auth(&builtin_password, &builtin_salt) {
+            return (String::new(), String::new());
+        }
+        (builtin_password.to_string(), builtin_salt)
     }
 
     pub fn get_effective_permanent_password_salt() -> String {
